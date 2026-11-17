@@ -1,0 +1,66 @@
+# Unsigned-IPA build of the .NET MAUI (C#) iOS app, for CI security scanning (Appknox).
+#
+# Same interface as the Xcode-based Fastfile in the other iOS repos: `fastlane ios
+# build_unsigned` builds a Release ios-arm64 app without code signing, packages it as
+# build/<App>.ipa and writes APP_PATH to GITHUB_ENV.
+#
+# Optional overrides (environment variables):
+#   DOTNET_PROJECT        project to build (default: src/App/App.csproj)
+#   DOTNET_FRAMEWORK      target framework (default: net8.0-ios)
+#   IOS_CONFIGURATION     build configuration (default: Release)
+#   IOS_RUNTIME           runtime identifier (default: ios-arm64)
+
+require "fileutils"
+require "shellwords"
+require "tmpdir"
+
+default_platform(:ios)
+
+# Fastfile code runs from the fastlane/ directory; resolve paths from the repo root.
+REPO_ROOT = File.expand_path("..", __dir__)
+BUILD_DIR = File.join(REPO_ROOT, "build")
+
+platform :ios do
+  desc "Build an unsigned IPA (for security scanning, not for distribution)"
+  lane :build_unsigned do
+    project = File.join(REPO_ROOT, ENV.fetch("DOTNET_PROJECT", "src/App/App.csproj"))
+    framework = ENV.fetch("DOTNET_FRAMEWORK", "net8.0-ios")
+    configuration = ENV.fetch("IOS_CONFIGURATION", "Release")
+    runtime = ENV.fetch("IOS_RUNTIME", "ios-arm64")
+    output_dir = File.join(BUILD_DIR, "dotnet")
+
+    FileUtils.rm_rf(output_dir)
+    args = [
+      "dotnet", "build", project,
+      "-c", configuration,
+      "-f", framework,
+      "-r", runtime,
+      "-o", output_dir,
+      # No certificates on CI: build and bundle without signing (app extensions included)
+      "-p:EnableCodeSigning=false",
+      "-p:CodesignKey=",
+      "-p:CodesignProvision=",
+      "-p:MtouchUseLlvm=false"
+    ]
+    sh(args.shelljoin)
+
+    package_unsigned_ipa(output_dir)
+  end
+end
+
+def package_unsigned_ipa(output_dir)
+  app = Dir.glob(File.join(output_dir, "*.app")).first ||
+        Dir.glob(File.join(REPO_ROOT, "src", "**", "bin", "**", "ios-arm64", "*.app")).first
+  UI.user_error!("No .app found in #{output_dir}") unless app
+
+  ipa = File.join(BUILD_DIR, "#{File.basename(app, '.app')}.ipa")
+  FileUtils.rm_f(ipa)
+  Dir.mktmpdir do |staging|
+    FileUtils.mkdir_p(File.join(staging, "Payload"))
+    FileUtils.cp_r(app, File.join(staging, "Payload"))
+    sh("cd #{staging.shellescape} && zip -qry #{ipa.shellescape} Payload")
+  end
+
+  File.open(ENV["GITHUB_ENV"], "a") { |f| f.puts("APP_PATH=#{ipa}") } if ENV["GITHUB_ENV"]
+  UI.success("Unsigned IPA: #{ipa}")
+end
