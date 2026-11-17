@@ -40,7 +40,9 @@ platform :ios do
       "-p:EnableCodeSigning=false",
       "-p:CodesignKey=",
       "-p:CodesignProvision=",
-      "-p:MtouchUseLlvm=false"
+      "-p:MtouchUseLlvm=false",
+      # The workload may expect a slightly different Xcode than the runner has
+      "-p:ValidateXcodeVersion=false"
     ]
     sh(args.shelljoin)
 

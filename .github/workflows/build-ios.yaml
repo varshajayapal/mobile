@@ -24,16 +24,17 @@ env:
   LANG: en_US.UTF-8
   FASTLANE_SKIP_UPDATE_CHECK: "1"
   FASTLANE_HIDE_CHANGELOG: "1"
-  # Same toolchain as upstream's build.yml (MAUI 8 needs Xcode 15.4)
-  DOTNET_VERSION: "8.0.402"
-  MAUI_WORKLOAD_VERSION: "8.0.402"
+  # Upstream used .NET 8.0.402 + Xcode 15.4, but macos-14 runners are retired.
+  # The latest .NET 8 SDK/MAUI workload supports Xcode 16 on macos-15.
+  DOTNET_VERSION: "8.0.4xx"
+  XCODE_VERSION: "16.2"
   DOTNET_PROJECT: src/App/App.csproj
   DOTNET_FRAMEWORK: net8.0-ios
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "1"
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,16 +47,18 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           echo "RISK_THRESHOLD=${{ github.event.inputs.riskThreshold }}" >> $GITHUB_ENV
-      - name: Select Xcode 15.4
+      - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app
+          sudo xcode-select -s /Applications/Xcode_${XCODE_VERSION}.app
           xcodebuild -version
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Install MAUI workload
-        run: dotnet workload install maui --version ${{ env.MAUI_WORKLOAD_VERSION }}
+        run: |
+          dotnet workload install maui
+          dotnet workload list
       - name: Restore packages
         run: dotnet restore ${{ env.DOTNET_PROJECT }}
       - name: Set up Ruby and fastlane
